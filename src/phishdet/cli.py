@@ -64,5 +64,66 @@ def predict(url_str: str) -> None:
         click.echo(f"❌ Error: {e}")
         click.echo("Run 'train' command first.")
 
+@cli.command(name="predict-file")
+@click.option(
+    "--input",
+    "input_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Input CSV file with column 'url'",
+)
+@click.option(
+    "--output",
+    "output_path", 
+    type=click.Path(dir_okay=False, path_type=Path),
+    required=True,
+    help="Output CSV with predictions",
+)
+def predict_file(input_path: Path, output_path: Path) -> None:
+    """Predict phishing/benign for batch of URLs."""
+    try:
+        clf, vectorizer = load_model()
+        print(f"✅ Loaded model")
+        
+        # Load input CSV
+        df = pd.read_csv(input_path)
+        print(f"📊 Processing {len(df)} URLs from {input_path}")
+        
+        # Assume first column is URLs, or find 'url' column
+        if 'url' in df.columns:
+            urls = df['url'].tolist()
+        else:
+            urls = df.iloc[:, 0].astype(str).tolist()  # First column
+        
+        # Predict all URLs
+        X = vectorizer.transform(urls)
+        probas = clf.predict_proba(X)[:, 1]  # Phishing probability
+        labels = (probas >= 0.5).astype(int)
+        
+        # Create results DataFrame
+        results_df = pd.DataFrame({
+            'url': urls,
+            'prediction': labels,
+            'phishing_probability': probas,
+            'status': ['🟥 PHISHING' if l == 1 else '✅ BENIGN' for l in labels]
+        })
+        
+        # Save results
+        results_df.to_csv(output_path, index=False)
+        print(f"💾 Results saved to {output_path}")
+        
+        # Show summary
+        phishing_count = sum(labels)
+        print(f"\n📈 RESULTS SUMMARY:")
+        print(f"Total URLs: {len(urls)}")
+        print(f"Phishing: {phishing_count} ({phishing_count/len(urls)*100:.1f}%)")
+        print(f"Benign: {len(urls)-phishing_count}")
+        print("\n🔗 First 5 predictions:")
+        print(results_df.to_string(index=False))
+        
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        print("Make sure model is trained first!")
+
 if __name__ == "__main__":
     cli()
